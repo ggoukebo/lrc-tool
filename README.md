@@ -2,8 +2,6 @@
 
 # lrc-tool
 
-[![GithubStars](https://img.shields.io/github/stars/coderxi1/lrc-tool?style=flat&logo=github&color=yellow)](https://github.com/coderxi1/lrc-tool)
-
 云音乐歌词下载处理工具, 支持网易云音乐、QQ音乐歌词 (支持Vercel部署)
 
 # 功能
