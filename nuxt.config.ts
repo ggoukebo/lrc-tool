@@ -1,5 +1,8 @@
 export default defineNuxtConfig({
   ssr: false,
+  nitro: {
+    preset: 'vercel',
+  },
   devtools: { enabled: true },
   modules: [
     '@unocss/nuxt',
