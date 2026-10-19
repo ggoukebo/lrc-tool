@@ -30,7 +30,7 @@ export const fileStorage = {
   },
 
   // 保存文件
-  async saveFile(file: File, name: string = file.name): Promise<void> {
+  /*async saveFile(file: File, name: string = file.name): Promise<void> {
     const db = await this.init()
     return new Promise((resolve, reject) => {
       const tx = db.transaction('files', 'readwrite')
@@ -41,7 +41,23 @@ export const fileStorage = {
       tx.oncomplete = () => resolve()
       tx.onerror = (event) => reject((event.target as IDBTransaction).error)
     })
-  },
+  },*/
+  export function saveLrcFile(content: string, filename: string = 'lyrics.lrc') {
+  // 创建 UTF-8 编码的 Blob 对象
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  
+  // 创建隐藏的 a 标签触发下载
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename.endsWith('.lrc') ? filename : `${filename}.lrc`
+  document.body.appendChild(a)
+  a.click()
+  
+  // 清理 DOM 和内存
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
   // 读取文件
   async loadFile(fileName: string): Promise<File | null> {
