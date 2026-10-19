@@ -54,9 +54,22 @@ const API = {
           try { data = JSON.parse(match[0]) } catch {}
         }
       }
+
+      const decode = (value: unknown) => {
+        if (!value || typeof value !== 'string') return ''
+        try {
+          // QQ sometimes returns plain LRC/XML instead of base64.
+          const decoded = Buffer.from(value, 'base64').toString('utf-8')
+          const looksLikeBase64Lyric = /(?:\[\d{1,3}:\d{1,2}(?:[.:]\d{1,5})?\]|<QrcInfos|LyricContent)/.test(decoded)
+          return cleanQqLyric(looksLikeBase64Lyric ? decoded : value)
+        } catch {
+          return cleanQqLyric(value)
+        }
+      }
+
       return {
-        lyric: data?.lyric ? cleanQqLyric(Buffer.from(data.lyric, 'base64').toString('utf-8')) : '',
-        trans: data?.trans ? cleanQqLyric(Buffer.from(data.trans, 'base64').toString('utf-8')) : '',
+        lyric: decode(data?.lyric),
+        trans: decode(data?.trans || data?.tlyric),
       }
     })
   },
