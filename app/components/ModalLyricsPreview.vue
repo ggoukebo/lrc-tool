@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
 
-const props = defineProps<{ lyrics: Lyrics; song: Song; close:()=>void }>()
+const props = defineProps<{ lyrics: Lyrics; song: Song; close: () => void }>()
 
 const settings = reactive({
   lyrics: {
@@ -22,30 +22,32 @@ const filters = reactive([
     name: '移除空白行',
     enable: true,
     weight: 1,
-    func: (line: LrcLine, lrc: Lrc) => {
-      return line.raw.trim() && line.text.trim()
+    func: (line: LrcLine, _lrc: Lrc, _index: number) => {
+      return Boolean(line.raw.trim() && line.text.trim())
     }
   },
   {
     name: '移除重复行',
     enable: true,
     weight: 2,
-    func: (line: LrcLine, lrc: Lrc) => {
-      return lrc.lines.some(l => l.raw === line.raw)
+    func: (line: LrcLine, lrc: Lrc, index: number) => {
+      // 只保留相同时间戳+文本第一次出现的行
+      return lrc.lines.findIndex(l => l.raw === line.raw) === index
     }
   },
   {
     name: '从歌词中提取META',
     enable: true,
     weight: 3,
-    func: (line: LrcLine, lrc: Lrc) => {
+    func: (line: LrcLine, lrc: Lrc, _index: number) => {
       for (const [key_meta, key_regex] of Object.entries({
         arranger: "编曲",
         composer: "作?曲",
         lyricist: "作?词",
         producer: "制作人",
       })) {
-        const match = line.text.match(new RegExp(`(${key_regex})\\s*[:：]\\s*(.+)`))
+        // 加上行首匹配 ^，防止误删包含冒号的正常歌词
+        const match = line.text.trim().match(new RegExp(`^(${key_regex})\\s*[:：]\\s*(.+)`))
         if (match && !lrc.meta[key_meta]) {
           lrc.meta[key_meta] = match[2]!.trim()
           return false
@@ -57,11 +59,11 @@ const filters = reactive([
 ])
 
 const lrcValue = ref<string>('')
-const textareaValue = ref<string>()
-watch([props.lyrics, settings, filters], lrcUpdate, { immediate: true })
+const textareaValue = ref<string>('')
+watch([() => props.lyrics, settings, filters], lrcUpdate, { immediate: true, deep: true })
 
 function lrcUpdate() {
-  let lrc = new Lrc();
+  let lrc = new Lrc()
   ObjectUtil.assign(lrc.meta, {
     ti: props.song.name,
     ar: props.song.artists?.join(','),
@@ -71,24 +73,59 @@ function lrcUpdate() {
   ObjectUtil.keys(props.lyrics).forEach(key => {
     const lyric = props.lyrics[key]
     const lyricSetting = settings.lyrics[key]
-    if (lyricSetting.enable) {
-      lrc.concat(lyric, lyricSetting.weight);
+    if (lyricSetting?.enable && lyric) {
+      lrc.concat(lyric, lyricSetting.weight)
     }
   })
 
-  filters.filter(f => f.enable).sort((a, b) => b.weight - a.weight).forEach(filter => {
-    lrc.lines = lrc.lines.filter(line => filter.func(line, lrc))
-  })
+  filters
+    .filter(f => f.enable)
+    .sort((a, b) => b.weight - a.weight)
+    .forEach(filter => {
+      lrc.lines = lrc.lines.filter((line, index) => filter.func(line, lrc, index))
+    })
 
-  lrcValue.value = lrc.format({to:'lrc',meta: settings.meta.enable})
+  lrcValue.value = lrc.format({ to: 'lrc', meta: settings.meta.enable })
   textareaValue.value = lrc.format({ to: settings.filetype, meta: settings.meta.enable })
 }
 
-const save = async () => saveTextAsFile(textareaValue.value || '', {
-  filename: `${props.song.artists?.join(',')} - ${props.song.title}`,
-  extension: settings.filetype,
-  description: '歌词文件'
-})
+// 兼容所有浏览器（含移动端、Safari、Firefox、Chrome）的文件保存函数
+const save = async () => {
+  const content = textareaValue.value || ''
+  const artists = props.song.artists?.join(',') || '未知歌手'
+  const songName = props.song.name || '未知歌曲'
+  // 过滤掉文件名中的非法字符 (如 / \ : * ? " < > |)
+  const safeBaseName = `${artists} - ${songName}`.replace(/[\\/:*?"<>|]/g, '_')
+  const ext = settings.filetype || 'lrc'
+  const fullFilename = `${safeBaseName}.${ext}`
+
+  try {
+    // 优先尝试原有的 saveTextAsFile，若报错或不支持则走通用 Blob 下载
+    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+      await saveTextAsFile(content, {
+        filename: safeBaseName,
+        extension: ext,
+        description: '歌词文件'
+      })
+      return
+    }
+  } catch (err: any) {
+    // 如果用户主动取消了保存窗口 (AbortError)，直接返回
+    if (err?.name === 'AbortError') return
+    console.warn('showSaveFilePicker 失败，启用通用下载回退方案:', err)
+  }
+
+  // 通用回退方案：使用 Blob + <a download> 触发浏览器直接下载
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fullFilename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
 const toEditor = () => {
   const editorStore = useEditorStore()
