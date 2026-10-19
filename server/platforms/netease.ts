@@ -1,4 +1,5 @@
 import { Platform } from '.'
+import { getMusicAToken, searchNeteaseEapi } from '../utils/netease-eapi'
 
 const API = {
   songs: async (ids: string[]) => fetchJson(`https://music.163.com/api/song/detail?ids=[${ids.join(',')}]`),
@@ -32,13 +33,6 @@ const API = {
   },
   album: async (albumId: string) => fetchJson(`https://music.163.com/api/v1/album/${albumId}`),
   playlist: async (playlistId: string) => fetchJson(`https://music.163.com/api/v6/playlist/detail?s=0&id=${playlistId}`),
-  search: async (s: string) =>
-    fetchJson(`https://music.163.com/api/search/get/web?${new URLSearchParams({ s, type: '1', offset: '0', total: 'true', limit: '50' })}`, {
-      headers: {
-        'Referer': 'https://music.163.com/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    }),
 }
 
 const getAlias = (song: any): string => {
@@ -61,7 +55,8 @@ const getSongsByIds = async (ids: string[]): Promise<Song[]> => (await Promise.a
 
 const netease: Platform = {
   search: async function (keyword: string): Promise<SearchResult> {
-    const data = await API.search(keyword)
+    const token = await getMusicAToken()
+    const data = await searchNeteaseEapi(keyword, token)
     return {
       songs: (data.result?.songs || []).map(convertSong),
     }
