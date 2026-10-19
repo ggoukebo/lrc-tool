@@ -10,8 +10,8 @@ const APIUtils = {
   }),
 }
 
-// 解码 QQ 音乐标准歌词中常见的 HTML 实体（如 &apos; &#39; &quot; &amp;）
-function decodeHtmlEntities(text: string): string {
+// 解码 HTML 实体并清理 QQ 音乐翻译特有的 "//" 空行占位符
+function cleanQqLyric(text: string): string {
   if (!text) return ''
   return text
     .replace(/&apos;/g, "'")
@@ -20,6 +20,8 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    // 将 QQ 音乐翻译中的 "[00:12.34]//" 替换为空内容，以便被空白行过滤器正常处理
+    .replace(/(\[\d{1,3}:\d{1,2}(?:[.:]\d{1,5})?\])\s*\/\/\s*$/gm, '$1')
 }
 
 const API = {
@@ -28,14 +30,34 @@ const API = {
     fetch(`https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg`, APIUtils.formRequest({ musicid: id, version: '15', miniversion: '82', lrctype: '4' }))
       .then((r) => r.text())
       .then((xml) => new XMLParser().parse(xml.replace('<!--', '').replace('-->', '').replace(/<miniversion.*\/>/, ''))),
-  // 标准 LRC 接口：同时提取 lyric (原文) 和 trans (翻译)
-  lyric: async (mid: string) =>
-    fetchJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${mid}&format=json`, {
-      headers: { Referer: 'https://y.qq.com/' },
-    }).then((data) => ({
-      lyric: data?.lyric ? decodeHtmlEntities(Buffer.from(data.lyric, 'base64').toString('utf-8')) : '',
-      trans: data?.trans ? decodeHtmlEntities(Buffer.from(data.trans, 'base64').toString('utf-8')) : '',
-    })),
+  // 标准 LRC 接口：同时支持传入 mid 和 id (musicid)，确保 100% 拿到 lyric 和 trans
+  lyric: async (mid?: string, id?: string) => {
+    const query = new URLSearchParams({
+      format: 'json',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+       ...(mid ? { songmid: mid } : {}),
+       ...(id ? { musicid: String(id) } : {}),
+    })
+    return fetchJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${query.toString()}`, {
+      headers: {
+        Referer: 'https://y.qq.com/',
+        Origin: 'https://y.qq.com',
+      },
+    }).then((data: any) => {
+      // 兼容万一返回的是 JSONP 字符串的情况
+      if (typeof data === 'string') {
+        const match = data.match(/\{[\s\S]*\}/)
+        if (match) {
+          try { data = JSON.parse(match[0]) } catch {}
+        }
+      }
+      return {
+        lyric: data?.lyric ? cleanQqLyric(Buffer.from(data.lyric, 'base64').toString('utf-8')) : '',
+        trans: data?.trans ? cleanQqLyric(Buffer.from(data.trans, 'base64').toString('utf-8')) : '',
+      }
+    })
+  },
   album: async (idOrMid: string) => fetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_detail_cp.fcg`, APIUtils.formRequest({ ...APIUtils.toIdOrMid(idOrMid, 'album'), newsong: 1 })),
   playlist: async (id: string) => fetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_v8_playlist_cp.fcg`, APIUtils.formRequest({ id, newsong: 1 })),
   musicu: async (keyword: string, pn: number = 1, ps: number = 50) =>
@@ -109,18 +131,28 @@ const qq: Platform = {
     }
   },
   getLyricsBySongId: async function (idOrMid: string): Promise<Lyrics> {
-    const songInfo = await this.getSongById(idOrMid)
-    const id = isNumber(idOrMid) ? idOrMid : songInfo.platformId
-    const mid = songInfo.mid
+    let id = isNumber(idOrMid) ? idOrMid : ''
+    let mid = isNumber(idOrMid) ? '' : idOrMid
 
-    // 并行请求：1. 标准 LRC 接口 (最稳定完整)  2. QRC 加密接口 (包含罗马音)
+    try {
+      const songInfo = await this.getSongById(idOrMid)
+      id = id || String(songInfo.platformId || '')
+      mid = mid || songInfo.mid || ''
+    } catch (e) {
+      console.warn('获取 QQ 音乐单曲详情失败，继续使用现有 ID 请求歌词:', e)
+    }
+
     const [standardRes, qrcData] = await Promise.allSettled([
-      API.lyric(mid),
-      API.lyrics(id),
+      API.lyric(mid, id),
+      id ? API.lyrics(id) : Promise.reject('no id'),
     ])
 
-    const stdLyric = standardRes.status === 'fulfilled' ? Lrc.from(standardRes.value.lyric).format() : ''
-    const stdTrans = standardRes.status === 'fulfilled' ? Lrc.from(standardRes.value.trans).format() : ''
+    const stdLyric = standardRes.status === 'fulfilled' && standardRes.value.lyric
+      ? Lrc.from(standardRes.value.lyric).format()
+      : ''
+    const stdTrans = standardRes.status === 'fulfilled' && standardRes.value.trans
+      ? Lrc.from(standardRes.value.trans).format()
+      : ''
 
     let qrcOriginal = ''
     let qrcTrans = ''
@@ -131,18 +163,27 @@ const qq: Platform = {
         const root = (Object.values(qrcData.value) as any)[0]
         const cmd = Array.isArray(root?.cmd) ? root.cmd[0] : root?.cmd
         const lyricHexs = cmd?.lyric || {}
-        qrcOriginal = Qrc.fromHex(lyricHexs.content).format()
-        qrcTrans = Qrc.fromHex(lyricHexs.contentts, false).format()
-        qrcRoma = Qrc.fromHex(lyricHexs.contentroma).format()
+
+        // 兼容 lyric 节点也可能是数组的情况（有些歌曲把原文、翻译放在不同的 item 中）
+        if (Array.isArray( lyricHexs )) {
+          for (const item of lyricHexs) {
+            if (item?.content && !qrcOriginal) qrcOriginal = Qrc.fromHex(item.content).format()
+            if (item?.contentts && !qrcTrans) qrcTrans = Qrc.fromHex(item.contentts, false).format()
+            if (item?.contentroma && !qrcRoma) qrcRoma = Qrc.fromHex(item.contentroma).format()
+          }
+        } else {
+          if (lyricHexs.content) qrcOriginal = Qrc.fromHex(lyricHexs.content).format()
+          if (lyricHexs.contentts) qrcTrans = cleanQqLyric(Qrc.fromHex(lyricHexs.contentts, false).format())
+          if (lyricHexs.contentroma) qrcRoma = Qrc.fromHex(lyricHexs.contentroma).format()
+        }
       } catch (e) {
-        console.warn('QRC 解析失败，使用标准 LRC 歌词:', e)
+        console.warn('QRC 解析失败:', e)
       }
     }
 
-    // 优先对比行数：谁更完整用谁（彻底解决 QRC 解析漏行导致歌词不全的问题）
     const pickMoreComplete = (a: string, b: string) => {
-      const aLines = a ? a.split('\n').length : 0
-      const bLines = b ? b.split('\n').length : 0
+      const aLines = a ? a.trim().split('\n').filter(Boolean).length : 0
+      const bLines = b ? b.trim().split('\n').filter(Boolean).length : 0
       return aLines >= bLines ? a : b
     }
 
