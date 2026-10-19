@@ -3,32 +3,53 @@ import { XMLParser } from 'fast-xml-parser'
 
 export class Qrc extends Lrc {
   static fromHex(hex?: string, isXml: boolean = true) {
-    if (!hex||hex.length<=64) return new Qrc()
+    if (!hex || hex.length <= 64) return new Qrc()
     const raw = decodeQrc(hex)
     if (!raw) return new Qrc()
-    if (!isXml) return new QrcBuilder(raw).build()
-    const data = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' }).parse(raw)
-    const lrc = data.QrcInfos?.LyricInfo?.Lyric_1?.LyricContent
-    return new QrcBuilder(lrc).build()
+    
+    let lrcText = raw
+    if (isXml || raw.includes('<QrcInfos') || raw.includes('LyricContent')) {
+      try {
+        const xmlClean = raw.replace(/<!--[\s\S]*?-->/g, '').trim()
+        const data = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' }).parse(xmlClean)
+        const extracted =
+          data?.QrcInfos?.LyricInfo?.Lyric_1?.LyricContent ||
+          data?.QrcInfos?.LyricInfo?.Lyric?.LyricContent
+        if (extracted) {
+          lrcText = extracted
+        }
+      } catch (e) {
+        const match = raw.match(/LyricContent\s*=\s*"([\s\S]*?)"\s*\/?>/)
+        if (match && match[1]) {
+          lrcText = match[1]
+        }
+      }
+    }
+
+    return new QrcBuilder(lrcText).build()
   }
 }
 
 export class QrcBuilder extends LrcBuilder {
   constructor(raw: string) {
-    super(raw)
-    this.handler((line, lrc) => {
-      const m = line.match(/^\[(\d+),\d+\](.*)$/)
+    super(raw || '')
+    this.lineHandlers.unshift((line, lrc) => {
+      const m = line.match(/^\[(\d+)\s*,\s*\d+\](.*)$/)
       if (!m) return
-      const time = parseInt(m[1], 10) / 1000
-      const line_content = m[2]
-      const regex_word = /\(\d+,\d+\)(.*?)(?=\(\d+,\d+\)|$)/g
-      let text = (line_content.match(/^[^\(]+/) || [''])[0]
-      let match_word
-      while ((match_word = regex_word.exec(line_content)) !== null) {
-        const word = match_word[1]
-        if (word) text += word
+      const time = parseInt(m[1]!, 10) / 1000
+      const lineContent = m[2] || ''
+
+      let text = lineContent
+        .replace(/\(\d+\s*,\s*\d+(?:\s*,\s*\d+)?\)/g, '')
+        .replace(/<\d+\s*,\s*\d+(?:\s*,\s*\d+)?>/g, '')
+        .trim()
+
+      if (text === '//') {
+        text = ''
       }
-      lrc.lines.push({ time, text, raw: line })
+
+      const formattedRaw = `[${Lrc.formatTime(time)}]${text}`
+      lrc.lines.push({ time, text, raw: formattedRaw })
       return true
     })
   }
