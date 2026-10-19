@@ -5,12 +5,15 @@ const APIUtils = {
   toIdOrMid: (idOrMid: string, prefix: string) => (isNumber(idOrMid) ? { [`${prefix}id`]: idOrMid } : { [`${prefix}mid`]: idOrMid }),
   formRequest: (params: any) => ({
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': 'https://y.qq.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    },
     body: new URLSearchParams({ ...params, format: 'json', platform: 'yqq' }),
   }),
 }
 
-// 解码 HTML 实体并清理 QQ 音乐翻译特有的 "//" 空行占位符
 function cleanQqLyric(text: string): string {
   if (!text) return ''
   return text
@@ -20,7 +23,6 @@ function cleanQqLyric(text: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    // 将 QQ 音乐翻译中的 "[00:12.34]//" 替换为空内容，以便被空白行过滤器正常处理
     .replace(/(\[\d{1,3}:\d{1,2}(?:[.:]\d{1,5})?\])\s*\/\/\s*$/gm, '$1')
 }
 
@@ -30,22 +32,22 @@ const API = {
     fetch(`https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg`, APIUtils.formRequest({ musicid: id, version: '15', miniversion: '82', lrctype: '4' }))
       .then((r) => r.text())
       .then((xml) => new XMLParser().parse(xml.replace('<!--', '').replace('-->', '').replace(/<miniversion.*\/>/, ''))),
-  // 标准 LRC 接口：同时支持传入 mid 和 id (musicid)，确保 100% 拿到 lyric 和 trans
+  
   lyric: async (mid?: string, id?: string) => {
     const query = new URLSearchParams({
       format: 'json',
       inCharset: 'utf8',
       outCharset: 'utf-8',
-       ...(mid ? { songmid: mid } : {}),
-       ...(id ? { musicid: String(id) } : {}),
+      ...(mid ? { songmid: mid } : {}),
+      ...(id ? { musicid: String(id) } : {}),
     })
     return fetchJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${query.toString()}`, {
       headers: {
         Referer: 'https://y.qq.com/',
         Origin: 'https://y.qq.com',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
     }).then((data: any) => {
-      // 兼容万一返回的是 JSONP 字符串的情况
       if (typeof data === 'string') {
         const match = data.match(/\{[\s\S]*\}/)
         if (match) {
@@ -60,10 +62,18 @@ const API = {
   },
   album: async (idOrMid: string) => fetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_detail_cp.fcg`, APIUtils.formRequest({ ...APIUtils.toIdOrMid(idOrMid, 'album'), newsong: 1 })),
   playlist: async (id: string) => fetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_v8_playlist_cp.fcg`, APIUtils.formRequest({ id, newsong: 1 })),
+  
+  // 增强中文搜索：完善请求头与参数，防止中文在海外节点被拦截
   musicu: async (keyword: string, pn: number = 1, ps: number = 50) =>
     fetchJson(`https://u.y.qq.com/cgi-bin/musicu.fcg`, {
       method: 'POST',
+      headers: {
+        'Referer': 'https://y.qq.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Content-Type': 'application/json;charset=utf-8'
+      },
       body: JSON.stringify({
+        comm: { ct: 19, cv: 1845, uin: 0 },
         req_1: {
           method: 'DoSearchForQQMusicDesktop',
           module: 'music.search.SearchCgiService',
@@ -88,8 +98,9 @@ const convertSong = (song: any): Song => ({
 const qq: Platform = {
   search: async function (keyword: string): Promise<SearchResult> {
     const data = await API.musicu(keyword)
+    const list = data.req_1?.data?.body?.song?.list || []
     return {
-      songs: data.req_1?.data.body.song.list.map(convertSong),
+      songs: list.map(convertSong),
     }
   },
   getSongById: async function (idOrMid: string): Promise<Song & { mid: string }> {
@@ -139,7 +150,7 @@ const qq: Platform = {
       id = id || String(songInfo.platformId || '')
       mid = mid || songInfo.mid || ''
     } catch (e) {
-      console.warn('获取 QQ 音乐单曲详情失败，继续使用现有 ID 请求歌词:', e)
+      console.warn('获取 QQ 音乐单曲详情失败:', e)
     }
 
     const [standardRes, qrcData] = await Promise.allSettled([
@@ -164,11 +175,10 @@ const qq: Platform = {
         const cmd = Array.isArray(root?.cmd) ? root.cmd[0] : root?.cmd
         const lyricHexs = cmd?.lyric || {}
 
-        // 兼容 lyric 节点也可能是数组的情况（有些歌曲把原文、翻译放在不同的 item 中）
-        if (Array.isArray( lyricHexs )) {
+        if (Array.isArray(lyricHexs)) {
           for (const item of lyricHexs) {
             if (item?.content && !qrcOriginal) qrcOriginal = Qrc.fromHex(item.content).format()
-            if (item?.contentts && !qrcTrans) qrcTrans = Qrc.fromHex(item.contentts, false).format()
+            if (item?.contentts && !qrcTrans) qrcTrans = cleanQqLyric(Qrc.fromHex(item.contentts, false).format())
             if (item?.contentroma && !qrcRoma) qrcRoma = Qrc.fromHex(item.contentroma).format()
           }
         } else {
