@@ -2,6 +2,11 @@ export default defineNuxtConfig({
   ssr: false,
   nitro: {
     preset: 'vercel',
+     vercel: {
+    functions: {
+      regions: ['hkg1'],
+      maxDuration: 60,
+    },
   },
   devtools: { enabled: true },
   modules: [
