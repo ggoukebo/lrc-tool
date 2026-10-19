@@ -1,6 +1,6 @@
 <template>
   <div
-    class="relative flex flex-col w-full bg-white border border-gray-300 rounded-lg dark:bg-[#1a1a1a] dark:border-[#555] group"
+    class="relative flex flex-col w-full min-h-0 bg-white border border-gray-300 rounded-lg dark:bg-[#1a1a1a] dark:border-[#555] group"
   >
     <!-- 文本框 -->
     <textarea
@@ -13,7 +13,7 @@
         dark:text-[#eee] dark:placeholder:text-gray-500
         bg-white dark:bg-[#1a1a1a]
         rounded-lg
-        whitespace-nowrap overflow-x-auto
+        whitespace-pre overflow-auto
       "
     ></textarea>
 
