@@ -7,6 +7,7 @@ export default defineNuxtConfig({
       regions: ['hkg1'],
       maxDuration: 60,
     },
+     },
   },
   devtools: { enabled: true },
   modules: [
