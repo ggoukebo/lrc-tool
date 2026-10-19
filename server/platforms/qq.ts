@@ -26,6 +26,18 @@ function cleanQqLyric(text: string): string {
     .replace(/(\[\d{1,3}:\d{1,2}(?:[.:]\d{1,5})?\])\s*\/\/\s*$/gm, '$1')
 }
 
+function parseQrcPayload(value: string, isXml: boolean = true): string {
+  if (!value) return ''
+  const trimmed = value.trim()
+  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length > 64) {
+    return cleanQqLyric(Qrc.fromHex(trimmed, isXml).format())
+  }
+  if (trimmed.includes('<QrcInfos') || trimmed.includes('LyricContent')) {
+    return cleanQqLyric(Qrc.fromHex(trimmed, true).format())
+  }
+  return cleanQqLyric(Lrc.from(trimmed).format())
+}
+
 const API = {
   song: async (idOrMid: string) => fetchJson(`https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg`, APIUtils.formRequest(APIUtils.toIdOrMid(idOrMid, 'song'))),
   lyrics: async (id: string) =>
@@ -190,14 +202,14 @@ const qq: Platform = {
 
         if (Array.isArray(lyricHexs)) {
           for (const item of lyricHexs) {
-            if (item?.content && !qrcOriginal) qrcOriginal = Qrc.fromHex(item.content).format()
-            if (item?.contentts && !qrcTrans) qrcTrans = cleanQqLyric(Qrc.fromHex(item.contentts, false).format())
-            if (item?.contentroma && !qrcRoma) qrcRoma = Qrc.fromHex(item.contentroma).format()
+            if (item?.content && !qrcOriginal) qrcOriginal = parseQrcPayload(item.content)
+            if (item?.contentts && !qrcTrans) qrcTrans = parseQrcPayload(item.contentts, false)
+            if (item?.contentroma && !qrcRoma) qrcRoma = parseQrcPayload(item.contentroma)
           }
         } else {
-          if (lyricHexs.content) qrcOriginal = Qrc.fromHex(lyricHexs.content).format()
-          if (lyricHexs.contentts) qrcTrans = cleanQqLyric(Qrc.fromHex(lyricHexs.contentts, false).format())
-          if (lyricHexs.contentroma) qrcRoma = Qrc.fromHex(lyricHexs.contentroma).format()
+          if (lyricHexs.content) qrcOriginal = parseQrcPayload(lyricHexs.content)
+          if (lyricHexs.contentts) qrcTrans = parseQrcPayload(lyricHexs.contentts, false)
+          if (lyricHexs.contentroma) qrcRoma = parseQrcPayload(lyricHexs.contentroma)
         }
       } catch (e) {
         console.warn('QRC 解析失败:', e)
