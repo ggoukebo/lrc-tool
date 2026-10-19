@@ -42,11 +42,6 @@ export const fileStorage = {
       tx.onerror = (event) => reject((event.target as IDBTransaction).error)
     })
   },
-  
-  // 清理 DOM 和内存
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
 
   // 读取文件
   async loadFile(fileName: string): Promise<File | null> {
