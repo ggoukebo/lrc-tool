@@ -1,4 +1,4 @@
-[演示网址](https://lrc.coderxi.com)
+[演示网址](https://lrc-tool.sykebo.top/)
 
 # lrc-tool
 
