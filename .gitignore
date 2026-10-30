@@ -4,6 +4,7 @@
 .nuxt
 .nitro
 .cache
+.vercel
 dist
 
 # Node dependencies
@@ -12,12 +13,14 @@ node_modules
 # Logs
 logs
 *.log
+*.err
 
 # Misc
 .DS_Store
 .fleet
 .idea
 .vscode
+.npmrc
 
 # Local env files
 .env

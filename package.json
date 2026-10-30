@@ -28,6 +28,7 @@
     "wavesurfer.js": "^7.10.1"
   },
   "devDependencies": {
+    "@nuxt/vite-builder": "4.1.1",
     "@types/node": "^24.3.1",
     "@unocss/nuxt": "^66.5.1",
     "@unocss/reset": "^66.5.1",
