@@ -11,7 +11,7 @@ import Navbar from '~/components/Navbar.vue';
       <slot></slot>
     </main>
     <footer class="w-full text-center text-sm py8">
-      <p>Copyright © 2025 ~ 2025 By 汐涌及岸. All rights reserved.</p>
+      <p>Copyright © 2026 ~ 2026 By ggoukebo. All rights reserved.</p>
     </footer>
   </div>
 </template>
