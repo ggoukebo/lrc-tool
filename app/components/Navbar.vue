@@ -24,5 +24,5 @@ const switchTheme = () => {
   cm.preference = themes[(currentIndex + 1) % themes.length]!
 }
 
-const goGithub = () => window.open("https://github.com/coderxi1/lrc-tool", "_blank")
+const goGithub = () => window.open("https://github.com/ggoukebo/lrc-tool", "_blank")
 </script>
