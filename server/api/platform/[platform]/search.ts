@@ -2,5 +2,7 @@ import { usePlatform } from "~~/server/platforms"
 
 export default defineEventHandler(async (event) => {
   const platform = usePlatform(event.context.params?.platform)
-  return platform.search(getQuery(event).keyword as string, Object.fromEntries(event.headers.entries()))
+  const requestUrl = new URL(event.req.url || '/', 'http://localhost')
+  const keyword = requestUrl.searchParams.get('keyword') || ''
+  return platform.search(keyword, Object.fromEntries(event.headers.entries()))
 })
